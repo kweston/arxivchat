@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "arxiv_chat"
+version = "0.1.0"
+description = ""
+authors = ["Kyle Weston <kyle.weston@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+langchain = "^0.0.235"
+PyMuPDF = "^1.22.5"
+pandas = "^2.0.3"
+openai = "^0.27.8"
+chromadb = "^0.4.0"
+tiktoken = "^0.4.0"
+lark = "^1.1.6"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

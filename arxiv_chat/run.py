@@ -1,4 +1,4 @@
-from arxivpdf import ArxivPDF
+from arxiv_chat.arxivpdf import ArxivPDF
 import argparse
 
 

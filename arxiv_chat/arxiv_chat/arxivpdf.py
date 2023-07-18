@@ -1,11 +1,8 @@
-import pdfplumber
-from operator import itemgetter
-from itertools import groupby
 import fitz
 import pandas as pd
 import re
 from langchain.docstore.document import Document
-from typing import List, Optional
+from typing import List
 
 
 class ArxivPDF:
