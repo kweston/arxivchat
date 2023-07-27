@@ -1,8 +1,12 @@
 from arxiv_chat.arxivpdf import ArxivPDF
 import argparse
+from pathlib import Path
+import chromadb
+
+CHROMA_DB_DIR = "./chroma_db"
 
 
-def main(fname, live_input=True):
+def main(fname: str, live_input:bool=True):
 
     pdf = ArxivPDF(fname)
     docs = pdf.split_text(split_sections=True)
@@ -15,9 +19,42 @@ def main(fname, live_input=True):
     # Build vectorstore and keep the metadata
     from langchain.embeddings import OpenAIEmbeddings
     from langchain.vectorstores import Chroma
-    vectorstore = Chroma.from_documents(documents=all_splits,
-                                        embedding=OpenAIEmbeddings())
+    collection_name = Path(fname).stem
+    #persist_dir = vector_db_dir / collection_name
+    embeddings_obj = OpenAIEmbeddings()
+    embedding_function = embeddings_obj.embed_documents
+    persistent_client = chromadb.PersistentClient(CHROMA_DB_DIR)
+    collections = set([col.name for col in persistent_client.list_collections()])
+    if collection_name in collections:
+        print(f"Loading {collection_name} from disk")
+        # load from disk
+        collection = persistent_client.get_collection(collection_name)
+        vectorstore = Chroma(
+            client=persistent_client,
+            collection_name=collection_name,
+            embedding_function=embeddings_obj,
+        )
+        # vectorstore = Chroma(persist_directory=str(persist_dir), embedding_function=embedding_function)
+    else:
+        print(f"Creating {collection_name} and saving to disk")
+        # create and save to disk
+        collection = persistent_client.create_collection(
+            collection_name,
+            embedding_function=embedding_function,
+        )
 
+        collection.add(
+            ids=[str(i) for i in range(len(all_splits))],
+            documents=[doc.page_content for doc in all_splits],
+            metadatas=[doc.metadata for doc in all_splits],
+        )
+
+        vectorstore = Chroma(
+            client=persistent_client,
+            collection_name=collection_name,
+            embedding_function=embeddings_obj,
+        )
+ #
     # Create retriever 
     from langchain.llms import OpenAI
     from langchain.retrievers.self_query.base import SelfQueryRetriever
@@ -69,5 +106,6 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Run doc QA on the given Arxiv PDF")
     parser.add_argument("fname", type=str, help="Path to the PDF file")
+    #parser.add_argument("--vector_db", type=Path, help="Path to the Chroma DB", default="./chroma_db")
     args = parser.parse_args(["2302.00923v4_clean.pdf"])
     main(args.fname)
