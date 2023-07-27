@@ -1,13 +1,80 @@
 import fitz
 import pandas as pd
 import re
+import os
+import logging
 from langchain.docstore.document import Document
+from langchain.utilities.arxiv import ArxivAPIWrapper
 from typing import List
 
 
-class ArxivPDF:
-    def __init__(self, fname):
-        self.fname = fname
+logger = logging.getLogger(__name__)
+
+
+class ArxivPDF(ArxivAPIWrapper):
+
+    def load(self, query, keep_pdf=False):
+        """
+        This overrides the load method in ArxivAPIWrapper to keep the downloaded PDF
+        Run Arxiv search and get the article texts plus the article meta information.
+        See https://lukasschwab.me/arxiv.py/index.html#Search
+
+        Returns: a list of documents with the document.page_content in text format
+
+        """
+        try:
+            import fitz
+        except ImportError:
+            raise ImportError(
+                "PyMuPDF package not found, please install it with "
+                "`pip install pymupdf`"
+            )
+
+        try:
+            results = self.arxiv_search(  # type: ignore
+                query[: self.ARXIV_MAX_QUERY_LENGTH], max_results=self.load_max_docs
+            ).results()
+        except self.arxiv_exceptions as ex:
+            logger.debug("Error on arxiv: %s", ex)
+            return []
+
+        docs: List[Document] = []
+        for result in results:
+            try:
+                doc_file_name: str = result.download_pdf()
+                with fitz.open(doc_file_name) as doc_file:
+                    text: str = "".join(page.get_text() for page in doc_file)
+            except FileNotFoundError as f_ex:
+                logger.debug(f_ex)
+                continue
+            if self.load_all_available_meta:
+                extra_metadata = {
+                    "entry_id": result.entry_id,
+                    "published_first_time": str(result.published.date()),
+                    "comment": result.comment,
+                    "journal_ref": result.journal_ref,
+                    "doi": result.doi,
+                    "primary_category": result.primary_category,
+                    "categories": result.categories,
+                    "links": [link.href for link in result.links],
+                }
+            else:
+                extra_metadata = {}
+            metadata = {
+                "Published": str(result.updated.date()),
+                "Title": result.title,
+                "Authors": ", ".join(a.name for a in result.authors),
+                "Summary": result.summary,
+                **extra_metadata,
+            }
+            doc = Document(
+                page_content=text[: self.doc_content_chars_max], metadata=metadata
+            )
+            docs.append(doc)
+            # this is the only change from the original method
+            if not keep_pdf:                
+                os.remove(doc_file_name)
+        return docs
 
     @staticmethod
     def _is_footnote(row: pd.Series) -> bool:
@@ -17,9 +84,9 @@ class ArxivPDF:
     def _is_section_header(row: pd.Series) -> bool:
         return re.match(r'^\d+\. ', row.text.strip()) is not None
         
-    def get_text_dataframe(self) -> pd.DataFrame:
+    def get_text_dataframe(self, fname) -> pd.DataFrame:
 
-        with fitz.open(self.fname) as doc:
+        with fitz.open(fname) as doc:
             # get the width and height of the first page
             dfs = []
             for i, page in enumerate(doc):
@@ -53,13 +120,14 @@ class ArxivPDF:
 
         return pd.concat(dfs)
 
-    def split_text(self, split_sections=False) -> List[Document]:
+    def split_text(self, fname: str, split_sections:bool=False) -> List[Document]:
         """ Extract text from a an arxiv pdf in 2 column format
         Args:
+            fname: the filename of the pdf
             split_sections: if True, split the text into sections, otherwise split into pages
         """
 
-        df = self.get_text_dataframe()
+        df = self.get_text_dataframe(fname)
         sections = [""]
         section_names = ["None"]
         prev_page = -1

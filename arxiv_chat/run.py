@@ -1,24 +1,39 @@
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.llms import OpenAI
+from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain.retrievers import ArxivRetriever
+from langchain.chains.query_constructor.base import AttributeInfo
+from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
 from arxiv_chat.arxivpdf import ArxivPDF
 import argparse
 from pathlib import Path
 import chromadb
+import logging
 
 CHROMA_DB_DIR = "./chroma_db"
 
-
 def main(fname: str, live_input:bool=True):
+    
+    fname = "2302.00923"
+    # retriever = ArxivRetriever(load_max_docs=200)
+    #import pdb; pdb.set_trace()
+    #front_matter = retriever.load(query=fname)
+    #docs = retriever.get_relevant_documents(fname)
 
-    pdf = ArxivPDF(fname)
-    docs = pdf.split_text(split_sections=True)
+    import pdb; pdb.set_trace()
+    pdf = ArxivPDF()
+    front_matter = pdf.load(query=fname, keep_pdf=True)
+    docs = pdf.split_text(fname, split_sections=True)
     # Define our text splitter
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     all_splits = text_splitter.split_documents(docs)
 
 
     # Build vectorstore and keep the metadata
-    from langchain.embeddings import OpenAIEmbeddings
-    from langchain.vectorstores import Chroma
     collection_name = Path(fname).stem
     #persist_dir = vector_db_dir / collection_name
     embeddings_obj = OpenAIEmbeddings()
@@ -54,11 +69,6 @@ def main(fname: str, live_input:bool=True):
             collection_name=collection_name,
             embedding_function=embeddings_obj,
         )
- #
-    # Create retriever 
-    from langchain.llms import OpenAI
-    from langchain.retrievers.self_query.base import SelfQueryRetriever
-    from langchain.chains.query_constructor.base import AttributeInfo
 
     # Define our metadata
     metadata_field_info = [
@@ -75,12 +85,6 @@ def main(fname: str, live_input:bool=True):
     retriever = SelfQueryRetriever.from_llm(llm, vectorstore, document_content_description, metadata_field_info, verbose=True)
     # out = retriever.get_relevant_documents("Summarize the introduction section of the document")
     # print(out)
-
-
-    from langchain.chains import RetrievalQA
-    from langchain.chat_models import ChatOpenAI
-    from langchain.memory import ConversationBufferMemory
-
     llm = ChatOpenAI(temperature=0, verbose=True)
     qa_chain = RetrievalQA.from_chain_type(
         llm, retriever=retriever,
