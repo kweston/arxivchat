@@ -13,10 +13,19 @@ import argparse
 from pathlib import Path
 import chromadb
 import logging
+from langchain.schema import BaseRetriever, Document
 
 CHROMA_DB_DIR = "./chroma_db"
 
-def main(fname: str, live_input:bool=True):
+
+def format_front_matter(abstract_metadata):
+    out = ""
+    for k, v in abstract_metadata.items():
+        out += f"{k}: {v}\n\n"
+    return Document(page_content=out, metadata=abstract_metadata)
+
+
+def main(fname: str, force_overwrite:bool=True, live_input:bool=True):
     
     fname = "2302.00923"
     # retriever = ArxivRetriever(load_max_docs=200)
@@ -24,23 +33,26 @@ def main(fname: str, live_input:bool=True):
     #front_matter = retriever.load(query=fname)
     #docs = retriever.get_relevant_documents(fname)
 
-    import pdb; pdb.set_trace()
     pdf = ArxivPDF()
-    front_matter = pdf.load(query=fname, keep_pdf=True)
-    docs = pdf.split_text(fname, split_sections=True)
+    front_matter, body = pdf.load(query=fname, parse_pdf=True)
+    #docs = body
+    header = format_front_matter(front_matter[0].metadata)
+    docs = [header] + body
+
     # Define our text splitter
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     all_splits = text_splitter.split_documents(docs)
 
-
     # Build vectorstore and keep the metadata
-    collection_name = Path(fname).stem
+    collection_name = fname
     #persist_dir = vector_db_dir / collection_name
     embeddings_obj = OpenAIEmbeddings()
     embedding_function = embeddings_obj.embed_documents
     persistent_client = chromadb.PersistentClient(CHROMA_DB_DIR)
     collections = set([col.name for col in persistent_client.list_collections()])
-    if collection_name in collections:
+    print(f"Existing collections: {collections}")
+
+    if not force_overwrite and collection_name in collections:
         print(f"Loading {collection_name} from disk")
         # load from disk
         collection = persistent_client.get_collection(collection_name)
@@ -51,7 +63,9 @@ def main(fname: str, live_input:bool=True):
         )
         # vectorstore = Chroma(persist_directory=str(persist_dir), embedding_function=embedding_function)
     else:
-        print(f"Creating {collection_name} and saving to disk")
+        if force_overwrite:
+            print(f"Creating {collection_name} and saving to disk")
+            persistent_client.delete_collection(collection_name)
         # create and save to disk
         collection = persistent_client.create_collection(
             collection_name,
@@ -110,6 +124,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Run doc QA on the given Arxiv PDF")
     parser.add_argument("fname", type=str, help="Path to the PDF file")
+    parser.add_argument("--force_overwrite", "-f", action="store_true", help="Force overwrite of existing Chroma DB")
+    parser.add_argument("--live_input", action="store_true", help="Live input mode")
     #parser.add_argument("--vector_db", type=Path, help="Path to the Chroma DB", default="./chroma_db")
-    args = parser.parse_args(["2302.00923v4_clean.pdf"])
-    main(args.fname)
+    args = parser.parse_args()
+    main(args.fname, args.force_overwrite, args.live_input)

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class ArxivPDF(ArxivAPIWrapper):
 
-    def load(self, query, keep_pdf=False):
+    def load(self, query, parse_pdf=True):
         """
         This overrides the load method in ArxivAPIWrapper to keep the downloaded PDF
         Run Arxiv search and get the article texts plus the article meta information.
@@ -72,9 +72,10 @@ class ArxivPDF(ArxivAPIWrapper):
             )
             docs.append(doc)
             # this is the only change from the original method
-            if not keep_pdf:                
-                os.remove(doc_file_name)
-        return docs
+            if parse_pdf:
+                pdf_docs = self.split_text(doc_file_name, split_sections=True)
+            os.remove(doc_file_name)
+        return docs, pdf_docs
 
     @staticmethod
     def _is_footnote(row: pd.Series) -> bool:
