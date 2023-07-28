@@ -73,7 +73,7 @@ def main(fname: str, force_overwrite:bool=True, live_input:bool=True):
     
 
     pdf = ArxivPDF()
-    front_matter, body = pdf.load(query=fname, parse_pdf=True, split_sections=False)
+    front_matter, body = pdf.load(query=fname, parse_pdf=True, split_sections=False, keep_pdf=True)
     header = format_front_matter(front_matter[0].metadata)
     docs = [header] + body
 
@@ -137,7 +137,18 @@ if __name__ == '__main__':
         description="Run doc QA on the given Arxiv PDF",
         usage="python run.py 2302.0092"
     )
-    parser.add_argument("fname", type=str, help="Path to the PDF file")
+    parser.add_argument(
+        "--fname",
+        type=str, help="The Arxiv ID of the paper to run QA on",
+        default="2302.0092",
+        # Restrict to the following two papers for now until parsing is more robust
+        choices = [
+            "2302.00923",
+            "2211.11559", 
+            #"2307.09288", 
+        ]
+    )
+    #parser.add_argument("fname", type=str, help="Path to the PDF file")
     parser.add_argument("--force_overwrite", "-f", action="store_true", help="Force overwrite of existing Chroma DB")
     parser.add_argument("--live_input", action="store_true", help="Live input mode")
     args = parser.parse_args()

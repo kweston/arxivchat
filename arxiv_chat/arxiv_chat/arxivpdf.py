@@ -5,7 +5,8 @@ import os
 import logging
 from langchain.docstore.document import Document
 from langchain.utilities.arxiv import ArxivAPIWrapper
-from typing import List
+from typing import List, Generator
+from arxiv.arxiv import Result
 
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ArxivPDF(ArxivAPIWrapper):
 
-    def load(self, query, parse_pdf=True, split_sections=False):
+    def load(self, query, parse_pdf=True, split_sections=False, keep_pdf=False):
         """
         This overrides the load method in ArxivAPIWrapper to keep the downloaded PDF
         Run Arxiv search and get the article texts plus the article meta information.
@@ -31,7 +32,7 @@ class ArxivPDF(ArxivAPIWrapper):
             )
 
         try:
-            results = self.arxiv_search(  # type: ignore
+            results: Generator[Result] = self.arxiv_search(  # type: ignore
                 query[: self.ARXIV_MAX_QUERY_LENGTH], max_results=self.load_max_docs
             ).results()
         except self.arxiv_exceptions as ex:
@@ -40,13 +41,18 @@ class ArxivPDF(ArxivAPIWrapper):
 
         docs: List[Document] = []
         for result in results:
+            doc_file_name = result._get_default_filename()
+            if not os.path.exists(doc_file_name):
+                logger.info(f"Downloading {doc_file_name}...")
+                result.download_pdf()
+
             try:
-                doc_file_name: str = result.download_pdf()
                 with fitz.open(doc_file_name) as doc_file:
                     text: str = "".join(page.get_text() for page in doc_file)
             except FileNotFoundError as f_ex:
                 logger.debug(f_ex)
                 continue
+
             if self.load_all_available_meta:
                 extra_metadata = {
                     "entry_id": result.entry_id,
@@ -74,7 +80,8 @@ class ArxivPDF(ArxivAPIWrapper):
             # this is the only change from the original method
             if parse_pdf:
                 pdf_docs = self.split_text(doc_file_name, split_sections=split_sections)
-            os.remove(doc_file_name)
+            if not keep_pdf:
+                os.remove(doc_file_name)
         return docs, pdf_docs
 
     @staticmethod
