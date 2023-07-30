@@ -41,7 +41,10 @@ class ArxivPDF(ArxivAPIWrapper):
             return []
 
         docs: List[Document] = []
-        for result in results:
+        for i, result in enumerate(results):
+            if i >= 1:
+                raise NotImplementedError("Only one result is supported for now")
+
             doc_file_name = result._get_default_filename()
             if not os.path.exists(doc_file_name):
                 logger.info(f"Downloading {doc_file_name}...")
@@ -83,7 +86,7 @@ class ArxivPDF(ArxivAPIWrapper):
                 pdf_docs = self.split_text(doc_file_name, split_sections=split_sections)
             if not keep_pdf:
                 os.remove(doc_file_name)
-        return docs, pdf_docs
+        return docs, pdf_docs, doc_file_name
 
     @staticmethod
     def _is_footnote(row: pd.Series) -> bool:
