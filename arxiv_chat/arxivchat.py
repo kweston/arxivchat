@@ -13,6 +13,7 @@ from arxiv_chat.arxivpdf import ArxivPDF
 import argparse
 import chromadb
 from typing import List
+import gradio as gr
 
 CHROMA_DB_DIR = "./chroma_db"
 
@@ -108,13 +109,17 @@ def main(fname: str, force_overwrite:bool=True, live_input:bool=True):
         memory=ConversationBufferMemory()
     )
     if live_input:
-        while True:
-            question = input("Enter a question (q to quit): ")
-            if question.strip() == "q":
-                break
+        # while True:
+        #     question = input("Enter a question (q to quit): ")
+        #     if question.strip() == "q":
+        #         break
+        #     answer = qa_chain(question)
+        #     print(f"query: {answer['query']}")
+        #     print(f"result: {answer['result']}")
+        def llm_response(question, history=None):
             answer = qa_chain(question)
-            print(f"query: {answer['query']}")
-            print(f"result: {answer['result']}")
+            return answer['result'] 
+        gr.ChatInterface(llm_response).launch()
     else:
         questions = [
             "Who wrote this paper?",
