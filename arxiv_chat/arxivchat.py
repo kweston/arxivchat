@@ -8,8 +8,9 @@ from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseRetriever, Document
-from langchain.agents import initialize_agent, Tool
-from langchain.agents import AgentType
+from langchain.agents import initialize_agent, Tool, ConversationalChatAgent
+from langchain.agents import AgentType, AgentExecutor
+from langchain.schema import OutputParserException
 from arxiv_chat.arxivpdf import ArxivPDF
 import argparse
 import chromadb
@@ -112,38 +113,85 @@ def create_docQA_chain(fname: str, force_overwrite:bool=True):
     return qa_chain, doc_file_name, front_matter[0].metadata
 
 fnames = [
-        "2302.00923",
-        "2211.11559", 
+    "2307.09288"
+        #"2302.00923",
+        #"2211.11559", 
 ]
 
 def main(force_overwrite:bool=True, live_input:bool=True):
     
     tools = []
-    for fname in fnames:
-        qa_chain, file_name, metadata = create_docQA_chain(fname, force_overwrite)
-        tool = Tool(
-            name=fname,
-            func=qa_chain,
-            description=f"""
-            useful for when you need to answer questions about the paper titled {metadata['Title']}. Input should be a fully formed question.
-            """ # by {metadata['Authors']}
-            # published on {metadata['Published']}.
-            # """,u
-            # agent_type=AgentType.RETRIEVAL_QA,
-        )
-        print(tool.description)
-        tools.append(tool)
+    def dummy_func(x: str) -> str:
+        return x
+    dummy_tool = Tool(
+        name="dummy",
+        func=lambda x: x,
+        description="Doesn't do anything useful, don't ever use this tool for anything.",
+    )
+    # tools.append(dummy_tool)
+    # for fname in fnames:
+    #     qa_chain, file_name, metadata = create_docQA_chain(fname, force_overwrite)
+    #     tool = Tool(
+    #         name=fname,
+    #         func=qa_chain,
+    #         description=f"""
+    #         useful for when you need to answer questions about the paper titled {metadata['Title']}. Input should be a fully formed question.
+    #         """ # by {metadata['Authors']}
+    #         # published on {metadata['Published']}.
+    #         # """,u
+    #         # agent_type=AgentType.RETRIEVAL_QA,
+    #     )
+    #     print(tool.description)
+    #     tools.append(tool)
+    import pdb; pdb.set_trace()
 
     llm = ChatOpenAI(temperature=0, verbose=True)
     memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    PREFIX = """
+    I am a conversational chat agent that can answer questions about papers on arxiv. 
+    I can also answer other general questions.
+    """
+    SUFFIX = """Begin!
+    {chat_history}
+    Question: {input}
+    Thought:{agent_scratchpad}"""
 
-    agent = initialize_agent(
+    agent: AgentExecutor = initialize_agent(
         tools,
         llm,
         agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
         verbose=True,
-        memory=memory
+        memory=memory,
+        agent_kwargs={
+            'prefix': PREFIX,
+            'suffix': SUFFIX,
+        }
     )
+    #myagent: ConversationalChatAgent = agent.agent
+    # import ChatPromptTemplate from langchain
+    from langchain.prompts.chat import ChatPromptTemplate
+    prompt_template: ChatPromptTemplate = agent.agent.llm_chain.prompt
+    # import pdb; pdb.set_trace()
+
+    """
+    reorder prompt messages so that the chat history is before the scratchpad
+    before
+    0 System Prompt
+    1 Chat history
+    2 Human message
+    3 Agent scratchpad
+
+    0 System Prompt
+    1 Human message
+    2 Chat history
+    3 Agent scratchpad
+    """
+    #messages = agent.agent.llm_chain.prompt.messages
+    #agent.agent.llm_chain.prompt.messages = [messages[0], messages[2], messages[1], messages[3]]
+
+    # modify the prompt suffix of this agent to work with memory
+    from langchain.callbacks import StdOutCallbackHandler
+    handlers = [StdOutCallbackHandler()]
 
     if live_input:
         history = []
@@ -151,20 +199,35 @@ def main(force_overwrite:bool=True, live_input:bool=True):
             question = input("Enter a question (q to quit): ")
             if question.strip() == "q":
                 break
-            answer = agent.run(input=question)
+            try:
+                answer = agent.run(input=question)
+            except OutputParserException as e:
+                print("Warning: Could not parse LLM output")
+                response = str(e)
+                prefix = "Could not parse LLM output: "
+                if response.startswith(prefix):
+                    answer = response.removeprefix(prefix).removesuffix("`")
+                else:
+                    raise(e)
+                #print(e)
+                #continue
             print(answer)
         # def llm_response(question, history=None):
         #     answer = agent.run(question)
         #     return answer['result'] 
         # gr.ChatInterface(llm_response).launch()
     else:
+        # questions = [
+        #     "What is the population of France?",
+        #     "What is their national anthem?"
+        # ]
         questions = [
             # "What is multimodal chain-of-thought reasoning?",
             # "What are the main contributions of the Multimodal Chain-of-Though Reasoning paper?",
             # "What are the main contributions of the Visual QA paper?",
             # "What methods are used in the Visual QA paper?",
             # "How could visual QA be improved?",
-            "Give me a concise summary of the visual QA paper"
+            # "Give me a concise summary of the visual QA paper"
             # "Who wrote this paper?",
             # "What is the title of this paper?",
             # "What are the main contributions?",
@@ -174,7 +237,7 @@ def main(force_overwrite:bool=True, live_input:bool=True):
         ]
         for question in questions:
             print(f"query: {question}")
-            out = agent.run(question)
+            out = agent.run(question, callbacks=handlers)
             print(f"result: {out}")
             print()
 
