@@ -95,6 +95,28 @@ class ArxivPDF(ArxivAPIWrapper):
     @staticmethod
     def _is_section_header(row: pd.Series) -> bool:
         return re.match(r'^\d+\. ', row.text.strip()) is not None
+    
+    @staticmethod
+    def is_two_column(blocks: pd.DataFrame, page_width: int, tolerance: float = 0.2) -> bool:
+        """
+        Check if the document is in two column format
+        Args:
+            blocks: a dataframe with the text blocks from the pdf
+        """
+        # Get the median x centroid of each block and determine if it's close to the centre
+        # of the page
+        x_centroid = (blocks.x0 + blocks.x1) / 2
+        centre = page_width // 2
+        one_column = abs(x_centroid.median() - centre) < tolerance * page_width
+        return not one_column
+    
+    @staticmethod
+    def parse_two_column(blocks: pd.DataFrame, page_width: int, page_height: int) -> pd.DataFrame:
+        """
+        Parse a two column document
+        """
+        pass
+
         
     def get_text_dataframe(self, fname) -> pd.DataFrame:
 
@@ -111,24 +133,36 @@ class ArxivPDF(ArxivAPIWrapper):
                 # try to extract the title and author list from the first page
                 # split left and right columns
                 # ignore blocks that span both columns
-                df_left =  df.loc[(df.x0 < centre) & (df.x1 < centre)]
-                df_right =  df.loc[(df.x0 > centre) & (df.x1 > centre)]
+                if self.is_two_column(df, width):
+                    logger.debug(f"Got two column document for page {i}")
+                    df_left =  df.loc[(df.x0 < centre) & (df.x1 < centre)]
+                    df_right =  df.loc[(df.x0 > centre) & (df.x1 > centre)]
 
-                if i == 0:
-                    # Assume the title block is the first one that spans the centre column
-                    title_block = df.loc[(df.x0 < centre) & (df.x1 > centre) & (df.y0 < 0.2 * height)]
-                    # add title block to left column
-                    df_left = pd.concat([title_block, df_left])
+                    if i == 0:
+                        # Assume the title block is the first one that spans the centre column
+                        title_block = df.loc[(df.x0 < centre) & (df.x1 > centre) & (df.y0 < 0.2 * height)]
+                        # add title block to left column
+                        df_left = pd.concat([title_block, df_left])
 
-                df_combo = pd.concat([df_left, df_right])
+                    df_out = pd.concat([df_left, df_right])
+                else:
+                    logger.debug(f"Got one column document for page {i}")
+                    # parse one column format
+                    df_out = df.copy()
+
                 # filter out images
-                df_combo = df_combo.loc[df_combo.block_type == 0]
+                df_out = df_out.loc[df_out.block_type == 0]
                 # filter out vertical text
-                df_combo = df_combo.loc[df_combo.x1 - df_combo.x0 > 0.5 * (df_combo.y1 - df_combo.y0)]
+                df_out = df_out.loc[df_out.x1 - df_out.x0 > 0.5 * (df_out.y1 - df_out.y0)]
                 # filter out footnotes
-                df_combo = df_combo.loc[~df_combo.apply(self._is_footnote, axis=1)]
-                df_combo['page_no'] = i
-                dfs.append(df_combo)
+                try:
+                    df_out = df_out.loc[~df_out.apply(self._is_footnote, axis=1)]
+                except:
+                    import pdb; pdb.set_trace()
+                    pass
+                df_out['page_no'] = i
+
+                dfs.append(df_out)
 
         return pd.concat(dfs)
 
