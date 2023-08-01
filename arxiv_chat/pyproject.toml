@@ -16,6 +16,7 @@ lark = "^1.1.6"
 chroma-migrate = "^0.0.6"
 arxiv = "^1.4.8"
 gradio = "^3.39.0"
+ipykernel = "^6.25.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
