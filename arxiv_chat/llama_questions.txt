@@ -1,0 +1,4 @@
+What do you know about llama 2?
+What methods are used in this paper?
+How does it compare to llama 1?
+How could this reseach be improved?

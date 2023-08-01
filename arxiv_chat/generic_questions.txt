@@ -1,0 +1,12 @@
+What is multimodal chain-of-thought reasoning?
+What are the main contributions of the Multimodal Chain-of-Though Reasoning paper?
+What are the main contributions of the Visual QA paper?
+What methods are used in the Visual QA paper?
+How could visual QA be improved?
+Give me a concise summary of the visual QA pape
+Who wrote this paper?
+What is the title of this paper?
+What are the main contributions?
+What methods are used?
+What are the results?
+Give you give a concise summary of this document?

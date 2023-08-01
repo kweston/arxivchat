@@ -1,3 +1,7 @@
+import argparse
+import chromadb
+import gradio as gr
+import langchain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
@@ -11,16 +15,43 @@ from langchain.schema import BaseRetriever, Document
 from langchain.agents import initialize_agent, Tool, ConversationalChatAgent
 from langchain.agents import AgentType, AgentExecutor
 from langchain.schema import OutputParserException
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.callbacks import StdOutCallbackHandler
 from arxiv_chat.arxivpdf import ArxivPDF
-import argparse
-import chromadb
 from typing import List
-import gradio as gr
+from pathlib import Path
+from typing import Dict, Any, Optional, List
+from uuid import UUID
+
+# langchain.debug = True
 
 CHROMA_DB_DIR = "./chroma_db"
 
 
+class MyCustomHandler(BaseCallbackHandler):
+    def on_tool_start(self, token: str, **kwargs) -> None:
+        print(f"My custom handler, token: {token}")
+    
+    def on_tool_start(
+        self,
+        serialized: Dict[str, Any],
+        input_str: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Run when tool starts running."""
+        pass
+
+
 def format_front_matter(abstract_metadata: dict) -> Document:
+    """
+    Format the front matter of an arxiv paper into a document that can be
+    be understood by the RAG
+    """
     out = ""
     for k, v in abstract_metadata.items():
         out += f"{k}: {v}\n\n"
@@ -71,7 +102,11 @@ def create_vector_store(
         )
     return vectorstore
 
+
 def create_docQA_chain(fname: str, force_overwrite:bool=True):
+    """
+    Create a RetrievalQA chain from a pdf file
+    """
     pdf = ArxivPDF()
     front_matter, body, doc_file_name = pdf.load(query=fname, parse_pdf=True, split_sections=False, keep_pdf=True)
     header = format_front_matter(front_matter[0].metadata)
@@ -82,26 +117,7 @@ def create_docQA_chain(fname: str, force_overwrite:bool=True):
     all_splits = text_splitter.split_documents(docs)
 
     vectorstore = create_vector_store(all_splits, fname, force_overwrite)
-    # Define our metadata
-    # metadata_field_info = [
-    #     AttributeInfo(
-    #         name="Section",
-    #         description="Part of the document that the text comes from",
-    #         type="string or list[string]",
-    #     ),
-    # ]
-    # document_content_description = "Major sections of the document"
 
-    # Define self query retriver this uses the LLM to generate vector store queries
-    llm = OpenAI(temperature=0)
-    # retriever = SelfQueryRetriever.from_llm(
-    #     llm, vectorstore,
-    #     #document_content_description,
-    #     #metadata_field_info,
-    #     verbose=True)
-
-    # out = retriever.get_relevant_documents("Summarize the introduction section
-    # of the document")
     llm = OpenAI(temperature=0, verbose=True)
     qa_chain =  RetrievalQA.from_chain_type(
         llm=llm,
@@ -110,40 +126,31 @@ def create_docQA_chain(fname: str, force_overwrite:bool=True):
         verbose=True,
         return_source_documents=False,
     )
-    return qa_chain, doc_file_name, front_matter[0].metadata
+    return qa_chain, front_matter[0].metadata
 
-fnames = [
-    "2307.09288"
-        #"2302.00923",
-        #"2211.11559", 
-]
 
-def main(force_overwrite:bool=True, live_input:bool=True):
-    
+def main(
+        fnames: List[str],
+        force_overwrite:bool=True,
+        questions:Optional[List[str]] = None,
+        no_tools: bool=False,
+        no_gui: bool=False,
+        verbose: bool=False
+):
     tools = []
-    def dummy_func(x: str) -> str:
-        return x
-    dummy_tool = Tool(
-        name="dummy",
-        func=lambda x: x,
-        description="Doesn't do anything useful, don't ever use this tool for anything.",
-    )
-    # tools.append(dummy_tool)
-    # for fname in fnames:
-    #     qa_chain, file_name, metadata = create_docQA_chain(fname, force_overwrite)
-    #     tool = Tool(
-    #         name=fname,
-    #         func=qa_chain,
-    #         description=f"""
-    #         useful for when you need to answer questions about the paper titled {metadata['Title']}. Input should be a fully formed question.
-    #         """ # by {metadata['Authors']}
-    #         # published on {metadata['Published']}.
-    #         # """,u
-    #         # agent_type=AgentType.RETRIEVAL_QA,
-    #     )
-    #     print(tool.description)
-    #     tools.append(tool)
-    import pdb; pdb.set_trace()
+    if not no_tools:
+        for fname in fnames:
+            qa_chain, metadata = create_docQA_chain(fname, force_overwrite)
+            tool = Tool(
+                name=fname,
+                func=qa_chain,
+
+                description=f"""
+                useful for when you need to answer questions about the paper titled {metadata['Title']}. Input should be a fully formed question.
+                """
+            )
+            print(tool.description)
+            tools.append(tool)
 
     llm = ChatOpenAI(temperature=0, verbose=True)
     memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -162,18 +169,16 @@ def main(force_overwrite:bool=True, live_input:bool=True):
         agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
         verbose=True,
         memory=memory,
-        agent_kwargs={
-            'prefix': PREFIX,
-            'suffix': SUFFIX,
-        }
+        # early_stopping_method='generate',
+        max_iterations=3,
+        # agent_kwargs={
+        #     'prefix': PREFIX,
+        #     'suffix': SUFFIX,
+        # }
     )
-    #myagent: ConversationalChatAgent = agent.agent
-    # import ChatPromptTemplate from langchain
-    from langchain.prompts.chat import ChatPromptTemplate
-    prompt_template: ChatPromptTemplate = agent.agent.llm_chain.prompt
-    # import pdb; pdb.set_trace()
 
     """
+    TODO: 
     reorder prompt messages so that the chat history is before the scratchpad
     before
     0 System Prompt
@@ -185,82 +190,92 @@ def main(force_overwrite:bool=True, live_input:bool=True):
     1 Human message
     2 Chat history
     3 Agent scratchpad
-    """
-    #messages = agent.agent.llm_chain.prompt.messages
+
     #agent.agent.llm_chain.prompt.messages = [messages[0], messages[2], messages[1], messages[3]]
+    """
 
     # modify the prompt suffix of this agent to work with memory
-    from langchain.callbacks import StdOutCallbackHandler
-    handlers = [StdOutCallbackHandler()]
+    handlers = [StdOutCallbackHandler(), MyCustomHandler()]
 
-    if live_input:
-        history = []
-        while True:
-            question = input("Enter a question (q to quit): ")
-            if question.strip() == "q":
-                break
-            try:
+    def _cleanup_response(e: Exception) -> str:
+        print("Warning: Could not parse LLM output")
+        response = str(e)
+        prefix = "Could not parse LLM output: "
+        if response.startswith(prefix):
+            return response.removeprefix(prefix).removesuffix("`")
+        else:
+            raise(e)
+        
+    def _run_agent(agent: AgentExecutor, question: str) -> str:
+        try:
+            if verbose:
+                answer = agent.run(input=question, callbacks=handlers)
+            else:
                 answer = agent.run(input=question)
-            except OutputParserException as e:
-                print("Warning: Could not parse LLM output")
-                response = str(e)
-                prefix = "Could not parse LLM output: "
-                if response.startswith(prefix):
-                    answer = response.removeprefix(prefix).removesuffix("`")
-                else:
-                    raise(e)
-                #print(e)
-                #continue
-            print(answer)
-        # def llm_response(question, history=None):
-        #     answer = agent.run(question)
-        #     return answer['result'] 
-        # gr.ChatInterface(llm_response).launch()
+        except OutputParserException as e:
+            answer = _cleanup_response(e)
+        return answer
+
+    if questions is None:
+        if no_gui:
+            while True:
+                question = input("Enter a question (q to quit): ")
+                if question.strip() == "q":
+                    break
+                answer = _run_agent(agent, question)
+                print(answer)
+        else:
+            def llm_response(question, history=None):
+                answer = _run_agent(agent, question)
+                return answer 
+
+            gr.ChatInterface(llm_response).launch()
     else:
-        # questions = [
-        #     "What is the population of France?",
-        #     "What is their national anthem?"
-        # ]
-        questions = [
-            # "What is multimodal chain-of-thought reasoning?",
-            # "What are the main contributions of the Multimodal Chain-of-Though Reasoning paper?",
-            # "What are the main contributions of the Visual QA paper?",
-            # "What methods are used in the Visual QA paper?",
-            # "How could visual QA be improved?",
-            # "Give me a concise summary of the visual QA paper"
-            # "Who wrote this paper?",
-            # "What is the title of this paper?",
-            # "What are the main contributions?",
-            # "What methods are used?",
-            # "What are the results?",
-            # "Give you give a concise summary of this document?"
-        ]
         for question in questions:
             print(f"query: {question}")
-            out = agent.run(question, callbacks=handlers)
+            out = _run_agent(agent, question)
             print(f"result: {out}")
             print()
 
 
-if __name__ == '__main__':
-
+def parse_cli_args(args: Optional[List[str]]=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run doc QA on the given Arxiv PDF",
-        usage="python run.py 2302.0092"
+        usage="python run.py --fname 2302.0092"
     )
-    # parser.add_argument(
-    #     "--fname",
-    #     type=str, help="The Arxiv ID of the paper to run QA on",
-    #     default="2302.0092",
-    #     # Restrict to the following two papers for now until parsing is more robust
-    #     choices = [
-    #         "2302.00923",
-    #         "2211.11559", 
-    #         #"2307.09288", 
-    #     ]
-    # )
-    #parser.add_argument("fname", type=str, help="Path to the PDF file")
+    parser.add_argument(
+        "--fname",
+        type=str, help="The Arxiv ID of the paper to run QA on",
+        default="2307.00923",
+        # Restrict to the following two papers for now until parsing is more robust
+        choices = [
+            "2302.00923", # Multimodal CoT Reasoning paper
+            "2211.11559", # Visual programming paper
+            "2307.09288", # llama 2 paper
+        ]
+    )
     parser.add_argument("--force_overwrite", "-f", action="store_true", help="Force overwrite of existing Chroma DB")
     parser.add_argument("--live_input", action="store_true", help="Live input mode")
-    args = parser.parse_args()
-    main(args.force_overwrite, args.live_input)
+    parser.add_argument(
+        "--questions", "-q",
+         help="""A text file containing questions to ask the agent. If specified, we will not run 
+                in live input mode.""",
+        default=None,
+        type=Path
+    )
+    parser.add_argument("--no_tools", action="store_true", help="Don't load any tools. Useful for debugging")
+    parser.add_argument("--no_gui", action="store_true", help="Don't load the GUI")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose mode")
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+
+    args = parse_cli_args()
+    if args.questions is not None:
+        with open(args.questions, 'r') as f:
+            questions = f.readlines()
+    else:
+        questions = None
+
+    main([args.fname], args.force_overwrite, questions, args.no_tools, args.no_gui, args.verbose)

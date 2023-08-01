@@ -4,13 +4,13 @@ This app is intended to allow users to chat and ask about research papers publis
 
 As a proof of concept, I have extracted text from Meta's Llama 2 LLM released on July 18th 2023, and loaded this into a vector store which the model then uses as a source of additional knowledge when answering queries. 
 
-Future work will allow any other research paper to be queried in a similar manner.
+Future work will allow any other research paper to be queried in a similar manner. We could also include a series of papers and compare results and methodology between them.
 
 # Usage 
 
 To load the baseline chatbot without any specific domain knowledge you can use the --no_tools option
 ```
-python arxivchat.py --live --no_tools
+python arxivchat.py --no_tools
 ```
 Then navigate to http://127.0.0.1:7860/ in a browser. See the example output below.
 <img width="831" alt="arxiv_chat_notools" src="https://github.com/kweston/langchain_sandbox/assets/1307463/14526979-ded7-4e6b-9877-373b45d39d5c">
@@ -18,7 +18,7 @@ Then navigate to http://127.0.0.1:7860/ in a browser. See the example output bel
 
 Now compare this to the chat enhanced with specific domain knowledge about the LLama 2 paper using RAG
 ```
-python arxivchat.py --live
+python arxivchat.py
 ```
 
 <img width="754" alt="arxiv_chat" src="https://github.com/kweston/langchain_sandbox/assets/1307463/ef8d44d9-dc41-4e20-bf6e-f3b696294f9a">
