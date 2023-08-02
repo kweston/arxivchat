@@ -4,6 +4,16 @@ This app is intended to allow users to chat and ask about research papers publis
 
 As a proof of concept, I have extracted text from Meta's Llama 2 LLM released on July 18th 2023, and loaded this into a vector store which the model then uses as a source of additional knowledge when answering queries. 
 
+# Intallation
+
+First ensure that you have python installed on you system. Then install the poetry package using pip.
+This was tested with python 3.10.6 and poetry version 1.1.12.
+
+Then run
+```
+poetry install
+```
+
 # Usage 
 
 To load the baseline chatbot without any specific domain knowledge you can use the --no_tools option

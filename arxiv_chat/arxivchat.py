@@ -246,7 +246,7 @@ def parse_cli_args(args: Optional[List[str]]=None) -> argparse.Namespace:
     parser.add_argument(
         "--fname",
         type=str, help="The Arxiv ID of the paper to run QA on",
-        default="2307.00923",
+        default="2307.09288",
         # Restrict to the following two papers for now until parsing is more robust
         choices = [
             "2302.00923", # Multimodal CoT Reasoning paper
@@ -277,5 +277,7 @@ if __name__ == '__main__':
             questions = f.readlines()
     else:
         questions = None
+
+    print(f"Running with args: {args}")
 
     main([args.fname], args.force_overwrite, questions, args.no_tools, args.no_gui, args.verbose)
